@@ -7,6 +7,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import Link from 'next/link';
+import { ThemeToggle } from './ThemeToggle';
 
 interface HeaderProps {
   provinces: string[];
@@ -14,12 +15,12 @@ interface HeaderProps {
   onProvinceChange: (province: string) => void;
 }
 
-const ALL_PROVINCES_SELECT_ITEM_VALUE = "__ALL_PROVINCES__"; // Unique non-empty value
+const ALL_PROVINCES_SELECT_ITEM_VALUE = "__ALL_PROVINCES__"; 
 
 export default function Header({ provinces, selectedProvince, onProvinceChange }: HeaderProps) {
   const handleValueChange = (value: string) => {
     if (value === ALL_PROVINCES_SELECT_ITEM_VALUE) {
-      onProvinceChange(""); // Translate back to empty string for app state
+      onProvinceChange(""); 
     } else {
       onProvinceChange(value);
     }
@@ -32,23 +33,23 @@ export default function Header({ provinces, selectedProvince, onProvinceChange }
           <Hospital className="h-8 w-8" />
           <h1 className="text-2xl font-headline font-bold">TurnoSalud</h1>
         </Link>
-        <div className="w-full max-w-xs">
-          {/* The Select's value prop correctly uses selectedProvince (which can be "") */}
-          {/* This allows the placeholder to be shown when selectedProvince is "" */}
-          <Select value={selectedProvince} onValueChange={handleValueChange}>
-            <SelectTrigger className="w-full bg-background">
-              <SelectValue placeholder="Seleccionar Provincia" />
-            </SelectTrigger>
-            <SelectContent>
-              {/* This SelectItem now has a non-empty value */}
-              <SelectItem value={ALL_PROVINCES_SELECT_ITEM_VALUE}>Todas las Provincias</SelectItem>
-              {provinces.map((province) => (
-                <SelectItem key={province} value={province}>
-                  {province}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-4">
+          <div className="w-full max-w-xs">
+            <Select value={selectedProvince || ALL_PROVINCES_SELECT_ITEM_VALUE} onValueChange={handleValueChange}>
+              <SelectTrigger className="w-full bg-background">
+                <SelectValue placeholder="Seleccionar Provincia" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PROVINCES_SELECT_ITEM_VALUE}>Todas las Provincias</SelectItem>
+                {provinces.map((province) => (
+                  <SelectItem key={province} value={province}>
+                    {province}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <ThemeToggle />
         </div>
       </div>
     </header>
