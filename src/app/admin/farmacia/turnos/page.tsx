@@ -3,7 +3,7 @@
 
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,8 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { CalendarClock, PlusCircle, Trash2, Edit3, ArrowLeft, AlertTriangle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-// import { collection, addDoc, getDocs, query, where, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-// import { db } from '@/lib/firebaseConfig';
+import { collection, addDoc, getDocs, query, doc, updateDoc, deleteDoc, serverTimestamp, orderBy, where } from 'firebase/firestore';
+import { db } from '@/lib/firebaseConfig';
 
 interface DutyShift {
   id?: string; // Firestore document ID
@@ -22,6 +22,8 @@ interface DutyShift {
   endTime: string; // HH:MM
   is24hs: boolean;
   notes?: string;
+  createdAt?: any; // Firestore ServerTimestamp
+  updatedAt?: any; // Firestore ServerTimestamp
 }
 
 export default function PharmacyTurnsPage() {
@@ -37,52 +39,50 @@ export default function PharmacyTurnsPage() {
   const [isLoadingShifts, setIsLoadingShifts] = useState(true);
   const [showManualConfirm, setShowManualConfirm] = useState(false);
 
+  const fetchShifts = useCallback(async () => {
+    if (!user) return;
+    setIsLoadingShifts(true);
+    try {
+      const shiftsCollectionRef = collection(db, 'pharmacies', user.uid, 'dutyShifts');
+      // Query to order by date, and optionally filter past shifts if needed
+      // For now, fetching all and sorting client-side. Can optimize with Firestore query for future dates.
+      const q = query(shiftsCollectionRef, orderBy('date', 'asc'));
+      const querySnapshot = await getDocs(q);
+      const fetchedShifts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DutyShift));
+      setShifts(fetchedShifts);
+    } catch (error) {
+      console.error("Error fetching shifts:", error);
+      toast({ title: "Error", description: "No se pudieron cargar los turnos.", variant: "destructive" });
+    } finally {
+      setIsLoadingShifts(false);
+    }
+  }, [user, toast]);
+
   useEffect(() => {
     if (!loading && !user) {
       router.push('/auth/login');
     } else if (user) {
-      // TODO: Fetch shifts from Firestore
-      // const fetchShifts = async () => {
-      //   setIsLoadingShifts(true);
-      //   try {
-      //     const shiftsCollectionRef = collection(db, 'pharmacies', user.uid, 'dutyShifts');
-      //     const q = query(shiftsCollectionRef); // Add ordering by date if needed
-      //     const querySnapshot = await getDocs(q);
-      //     const fetchedShifts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DutyShift));
-      //     setShifts(fetchedShifts);
-      //   } catch (error) {
-      //     console.error("Error fetching shifts:", error);
-      //     toast({ title: "Error", description: "No se pudieron cargar los turnos.", variant: "destructive" });
-      //   } finally {
-      //     setIsLoadingShifts(false);
-      //   }
-      // };
-      // fetchShifts();
-
-      // Using mock data:
-      setShifts([
-        { id: 's1', date: new Date().toISOString().split('T')[0], startTime: '09:00', endTime: '21:00', is24hs: false, notes: 'Turno de hoy' },
-        { id: 's2', date: new Date(Date.now() + 86400000).toISOString().split('T')[0], startTime: '00:00', endTime: '00:00', is24hs: true, notes: 'Turno 24hs mañana' },
-      ]);
-      setIsLoadingShifts(false);
+      fetchShifts();
     }
-  }, [user, loading, router, toast]);
+  }, [user, loading, router, fetchShifts]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, shiftType: 'new' | 'edit') => {
-    const { name, value, type } = e.target;
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | { target: { name: string, value: any, type?: string, checked?: boolean } }, shiftType: 'new' | 'edit') => {
+    const { name, value } = e.target;
+    const type = e.target.type;
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : undefined;
-
+  
     const targetShift = shiftType === 'new' ? newShift : editingShift;
-    if (!targetShift) return;
-
+    if (!targetShift && shiftType === 'edit') return; // Should not happen if editingShift is not null
+  
     const updatedValue = type === 'checkbox' ? checked : value;
     
     if (shiftType === 'new') {
       setNewShift(prev => ({ ...prev, [name]: updatedValue }));
-    } else if (editingShift) {
+    } else if (editingShift) { // Ensure editingShift is not null
       setEditingShift(prev => prev ? ({ ...prev, [name]: updatedValue }) : null);
     }
   };
+  
 
   const handleAddOrUpdateShift = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,23 +97,19 @@ export default function PharmacyTurnsPage() {
     setIsSubmitting(true);
     try {
       if (editingShift && editingShift.id) {
-        // TODO: Update shift in Firestore
-        // const shiftDocRef = doc(db, 'pharmacies', user.uid, 'dutyShifts', editingShift.id);
-        // await updateDoc(shiftDocRef, { ...shiftData, updatedAt: serverTimestamp() });
-        setShifts(shifts.map(s => s.id === editingShift.id ? editingShift : s));
+        const shiftDocRef = doc(db, 'pharmacies', user.uid, 'dutyShifts', editingShift.id);
+        // Remove id from data to be saved
+        const { id, ...dataToUpdate } = editingShift;
+        await updateDoc(shiftDocRef, { ...dataToUpdate, updatedAt: serverTimestamp() });
         toast({ title: "Turno Actualizado", description: "El turno ha sido modificado." });
       } else {
-        // TODO: Add new shift to Firestore
-        // const shiftsCollectionRef = collection(db, 'pharmacies', user.uid, 'dutyShifts');
-        // const docRef = await addDoc(shiftsCollectionRef, { ...shiftData, pharmacyId: user.uid, createdAt: serverTimestamp() });
-        // setShifts([...shifts, { ...shiftData, id: docRef.id }]);
-        // Mocking add
-        const mockId = `new_shift_${Date.now()}`;
-        setShifts([...shifts, { ...shiftData, id: mockId }]);
+        const shiftsCollectionRef = collection(db, 'pharmacies', user.uid, 'dutyShifts');
+        await addDoc(shiftsCollectionRef, { ...shiftData, pharmacyId: user.uid, createdAt: serverTimestamp() });
         toast({ title: "Turno Agregado", description: "El nuevo turno ha sido guardado." });
       }
       setNewShift({ date: '', startTime: '08:00', endTime: '08:00', is24hs: false, notes: '' });
       setEditingShift(null);
+      fetchShifts(); // Re-fetch shifts to show the latest data
     } catch (error) {
       console.error("Error saving shift:", error);
       toast({ title: "Error al Guardar", description: "No se pudo guardar el turno.", variant: "destructive" });
@@ -124,27 +120,42 @@ export default function PharmacyTurnsPage() {
 
   const handleDeleteShift = async (shiftId?: string) => {
     if (!user || !shiftId) return;
-    // TODO: Delete shift from Firestore
-    // await deleteDoc(doc(db, 'pharmacies', user.uid, 'dutyShifts', shiftId));
-    setShifts(shifts.filter(s => s.id !== shiftId));
-    toast({ title: "Turno Eliminado", description: "El turno ha sido borrado." });
+    try {
+      await deleteDoc(doc(db, 'pharmacies', user.uid, 'dutyShifts', shiftId));
+      toast({ title: "Turno Eliminado", description: "El turno ha sido borrado." });
+      fetchShifts(); // Re-fetch shifts
+    } catch (error) {
+        console.error("Error deleting shift:", error);
+        toast({ title: "Error al Eliminar", description: "No se pudo borrar el turno.", variant: "destructive" });
+    }
   };
   
   const handleManualConfirmTurno = async () => {
     if(!user) return;
-    // This would typically update a specific field on the pharmacy's main document
-    // or a special "current_status" document.
-    // For now, it's a mock action.
-    // const pharmacyDocRef = doc(db, 'pharmacies', user.uid);
-    // await updateDoc(pharmacyDocRef, { manuallyConfirmedOnDuty: true, manuallyConfirmedAt: serverTimestamp() });
-    toast({ title: "Turno Confirmado Manualmente", description: "Has indicado que tu farmacia está de turno AHORA."});
-    setShowManualConfirm(false);
+    // This is a mock action for now.
+    // In a real scenario, this might update a field in `pharmacies/{user.uid}`
+    // or create a temporary "override" document.
+    try {
+      // Example: Update pharmacy document
+      // const pharmacyDocRef = doc(db, 'pharmacies', user.uid);
+      // await updateDoc(pharmacyDocRef, { 
+      //   manuallyConfirmedOnDuty: true, 
+      //   manuallyConfirmedAt: serverTimestamp(),
+      //   manuallyConfirmedUntil: new Date(Date.now() + 24 * 60 * 60 * 1000) // e.g., for 24 hours
+      // });
+      toast({ title: "Turno Confirmado Manualmente", description: "Has indicado que tu farmacia está de turno AHORA (simulación)."});
+      setShowManualConfirm(false);
+      // Potentially re-fetch pharmacy status or update UI to reflect this confirmation
+    } catch (error) {
+      console.error("Error manually confirming shift:", error);
+      toast({ title: "Error", description: "No se pudo confirmar el turno manualmente.", variant: "destructive"});
+    }
   }
 
   if (loading || isLoadingShifts) {
     return <div className="container mx-auto px-4 py-8 text-center">Cargando gestión de turnos...</div>;
   }
-  if (!user) return null;
+  if (!user) return null; // Should be redirected by useEffect
 
   const currentShiftData = editingShift || newShift;
 
@@ -177,8 +188,8 @@ export default function PharmacyTurnsPage() {
                  <Checkbox 
                     id="is24hs" 
                     name="is24hs" 
-                    checked={currentShiftData.is24hs} 
-                    onCheckedChange={(checked) => handleInputChange({ target: { name: 'is24hs', value: checked, type: 'checkbox' } } as any, editingShift ? 'edit' : 'new')}
+                    checked={!!currentShiftData.is24hs} 
+                    onCheckedChange={(checked) => handleInputChange({ target: { name: 'is24hs', value: checked, type: 'checkbox', checked: !!checked } } as any, editingShift ? 'edit' : 'new')}
                   />
                 <Label htmlFor="is24hs" className="text-sm font-medium">Turno 24hs</Label>
               </div>
@@ -204,7 +215,7 @@ export default function PharmacyTurnsPage() {
                 <PlusCircle className="mr-2 h-4 w-4" /> {editingShift ? (isSubmitting ? 'Guardando...' : 'Guardar Cambios') : (isSubmitting ? 'Agregando...' : 'Agregar Turno')}
               </Button>
               {editingShift && (
-                <Button type="button" variant="outline" onClick={() => setEditingShift(null)}>Cancelar Edición</Button>
+                <Button type="button" variant="outline" onClick={() => {setEditingShift(null); setNewShift({ date: '', startTime: '08:00', endTime: '08:00', is24hs: false, notes: '' });}}>Cancelar Edición</Button>
               )}
             </div>
           </form>
@@ -220,16 +231,16 @@ export default function PharmacyTurnsPage() {
             <p className="text-muted-foreground">No hay turnos especiales cargados.</p>
           ) : (
             <ul className="space-y-3">
-              {shifts.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(shift => (
-                <li key={shift.id} className="p-3 border rounded-md flex justify-between items-center">
-                  <div>
+              {shifts.map(shift => (
+                <li key={shift.id} className="p-3 border rounded-md flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                  <div className="mb-2 sm:mb-0">
                     <p className="font-semibold">{new Date(shift.date + 'T00:00:00').toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                     <p className="text-sm text-muted-foreground">
                       {shift.is24hs ? '24 horas' : `${shift.startTime} - ${shift.endTime}`}
-                      {shift.notes && ` (${shift.notes})`}
+                      {shift.notes && <span className="block sm:inline sm:ml-1">({shift.notes})</span>}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 self-end sm:self-center">
                     <Button variant="outline" size="icon" onClick={() => setEditingShift(shift)}>
                       <Edit3 className="h-4 w-4" />
                       <span className="sr-only">Editar</span>
@@ -246,26 +257,32 @@ export default function PharmacyTurnsPage() {
         </CardContent>
       </Card>
       
-      <Card className="max-w-4xl mx-auto mt-8 bg-amber-50 border-amber-200">
+      <Card className="max-w-4xl mx-auto mt-8 bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-700">
         <CardHeader>
           <CardTitle className="text-xl font-headline flex items-center gap-2">
-            <AlertTriangle className="h-6 w-6 text-amber-600" /> Confirmación Manual Rápida
+            <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" /> Confirmación Manual Rápida
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="dark:text-amber-300">
             Si tu farmacia está de turno AHORA MISMO por una situación imprevista o para asegurar visibilidad inmediata.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!showManualConfirm ? (
-            <Button variant="warning" onClick={() => setShowManualConfirm(true)}>
+            <Button 
+              onClick={() => setShowManualConfirm(true)}
+              className="bg-amber-500 hover:bg-amber-600 text-white dark:bg-amber-600 dark:hover:bg-amber-700"
+            >
               Activar: "Estoy de Turno Hoy"
             </Button>
           ) : (
-            <div className="space-y-3 p-4 border border-amber-300 rounded-md bg-amber-100">
-              <p className="font-semibold text-amber-800">¿Confirmas que tu farmacia está de turno en este preciso momento?</p>
-              <p className="text-xs text-amber-700">Esta acción sobrescribirá temporalmente los turnos programados para la visualización pública.</p>
+            <div className="space-y-3 p-4 border border-amber-300 rounded-md bg-amber-100 dark:bg-amber-800/50 dark:border-amber-600">
+              <p className="font-semibold text-amber-800 dark:text-amber-200">¿Confirmas que tu farmacia está de turno en este preciso momento?</p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">Esta acción sobrescribirá temporalmente los turnos programados para la visualización pública (simulación).</p>
               <div className="flex gap-3">
-                <Button variant="success" onClick={handleManualConfirmTurno}>Sí, confirmar ahora</Button>
+                <Button 
+                  onClick={handleManualConfirmTurno}
+                  className="bg-green-500 hover:bg-green-600 text-white dark:bg-green-600 dark:hover:bg-green-700"
+                >Sí, confirmar ahora</Button>
                 <Button variant="outline" onClick={() => setShowManualConfirm(false)}>Cancelar</Button>
               </div>
             </div>
@@ -277,10 +294,4 @@ export default function PharmacyTurnsPage() {
   );
 }
 
-// Add new variants to button if they don't exist
-// Or ensure you have these in your theme / component
-// For example, in your button.tsx or globals.css:
-// .bg-amber-500 hover:bg-amber-600 for variant="warning"
-// .bg-green-500 hover:bg-green-600 for variant="success"
-// For simplicity, using default variants and text colors.
-
+    
