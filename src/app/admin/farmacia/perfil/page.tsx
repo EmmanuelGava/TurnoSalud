@@ -11,16 +11,16 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { ArrowLeft, Save, UserCog } from 'lucide-react';
-// import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-// import { db } from '@/lib/firebaseConfig';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebaseConfig';
 
-// Mocked data structure for now
 interface PharmacyProfile {
   name: string;
   address: string;
   phone: string;
   province: string;
   municipality: string;
+  email?: string; // Added email for reference
   fixedHours: {
     lunes?: string;
     martes?: string;
@@ -32,19 +32,30 @@ interface PharmacyProfile {
   };
 }
 
+const initialProfileState: PharmacyProfile = {
+  name: '',
+  address: '',
+  phone: '',
+  province: '',
+  municipality: '',
+  email: '',
+  fixedHours: {
+    lunes: '',
+    martes: '',
+    miercoles: '',
+    jueves: '',
+    viernes: '',
+    sabado: '',
+    domingo: '',
+  },
+};
+
 export default function PharmacyProfilePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
-  const [profile, setProfile] = useState<PharmacyProfile>({
-    name: '',
-    address: '',
-    phone: '',
-    province: '',
-    municipality: '',
-    fixedHours: {},
-  });
+  const [profile, setProfile] = useState<PharmacyProfile>(initialProfileState);
   const [isSaving, setIsSaving] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -52,44 +63,44 @@ export default function PharmacyProfilePage() {
     if (!loading && !user) {
       router.push('/auth/login');
     } else if (user) {
-      // TODO: Fetch profile from Firestore
-      // const fetchProfile = async () => {
-      //   try {
-      //     const pharmacyDocRef = doc(db, 'pharmacies', user.uid);
-      //     const docSnap = await getDoc(pharmacyDocRef);
-      //     if (docSnap.exists()) {
-      //       setProfile(docSnap.data() as PharmacyProfile);
-      //     } else {
-      //       // Initialize with some defaults or leave blank if it's a new pharmacy
-      //       setProfile(prev => ({...prev, name: user.displayName || '', /* other fields */ }));
-      //       toast({ title: "Perfil no encontrado", description: "Completa los datos de tu farmacia."});
-      //     }
-      //   } catch (error) {
-      //     console.error("Error fetching profile:", error);
-      //     toast({ title: "Error", description: "No se pudo cargar el perfil.", variant: "destructive" });
-      //   } finally {
-      //     setInitialLoading(false);
-      //   }
-      // };
-      // fetchProfile();
-      
-      // Using mock data for now:
-      setProfile({
-        name: 'Farmacia Ejemplo (Cargar desde DB)',
-        address: 'Calle Falsa 123',
-        phone: '011-1234-5678',
-        province: 'CABA',
-        municipality: 'Palermo',
-        fixedHours: { lunes: '09:00-20:00', martes: '09:00-20:00' }
-      });
-      setInitialLoading(false);
+      const fetchProfile = async () => {
+        setInitialLoading(true);
+        try {
+          const pharmacyDocRef = doc(db, 'pharmacies', user.uid);
+          const docSnap = await getDoc(pharmacyDocRef);
+          if (docSnap.exists()) {
+            // Ensure all fields from initialProfileState are present, even if undefined in Firestore
+            const fetchedData = docSnap.data();
+            const completeProfile: PharmacyProfile = {
+              ...initialProfileState, // Start with defaults
+              ...(fetchedData as Partial<PharmacyProfile>), // Override with fetched data
+              email: user.email || '', // Always ensure email is from auth user
+              fixedHours: { // Ensure fixedHours object and its keys exist
+                ...initialProfileState.fixedHours,
+                ...(fetchedData.fixedHours || {}),
+              }
+            };
+            setProfile(completeProfile);
+          } else {
+            // Initialize with user's email if available, and prompt to complete
+            setProfile(prev => ({...initialProfileState, email: user.email || ''}));
+            toast({ title: "Bienvenido/a", description: "Por favor, completa los datos de tu farmacia."});
+          }
+        } catch (error) {
+          console.error("Error fetching profile:", error);
+          toast({ title: "Error al cargar perfil", description: "No se pudo cargar el perfil de la farmacia.", variant: "destructive" });
+        } finally {
+          setInitialLoading(false);
+        }
+      };
+      fetchProfile();
     }
   }, [user, loading, router, toast]);
   
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     if (name.startsWith("fixedHours.")) {
-      const day = name.split('.')[1];
+      const day = name.split('.')[1] as keyof PharmacyProfile['fixedHours'];
       setProfile(prev => ({
         ...prev,
         fixedHours: { ...prev.fixedHours, [day]: value }
@@ -101,24 +112,26 @@ export default function PharmacyProfilePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user) {
+      toast({ title: "Error", description: "Debes estar autenticado para guardar.", variant: "destructive" });
+      return;
+    }
     setIsSaving(true);
     try {
-      // TODO: Save profile to Firestore
-      // const pharmacyDocRef = doc(db, 'pharmacies', user.uid);
-      // await setDoc(pharmacyDocRef, profile, { merge: true }); // Use setDoc with merge:true or updateDoc
-      console.log("Saving profile:", profile); // Mock save
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      const pharmacyDocRef = doc(db, 'pharmacies', user.uid);
+      // Ensure email is part of the profile, typically from the authenticated user
+      const profileToSave = { ...profile, email: user.email || profile.email };
+      await setDoc(pharmacyDocRef, profileToSave, { merge: true }); 
 
       toast({
         title: "Perfil Actualizado",
-        description: "La información de tu farmacia ha sido guardada.",
+        description: "La información de tu farmacia ha sido guardada con éxito.",
       });
     } catch (error) {
       console.error("Error saving profile:", error);
       toast({
         title: "Error al Guardar",
-        description: "No se pudo actualizar el perfil.",
+        description: "No se pudo actualizar el perfil. Intenta nuevamente.",
         variant: "destructive",
       });
     } finally {
@@ -130,9 +143,9 @@ export default function PharmacyProfilePage() {
     return <div className="container mx-auto px-4 py-8 text-center">Cargando perfil...</div>;
   }
 
-  if (!user) return null;
+  if (!user) return null; // Should be redirected by useEffect, but good fallback
 
-  const daysOfWeek = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+  const daysOfWeek: (keyof PharmacyProfile['fixedHours'])[] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -148,7 +161,7 @@ export default function PharmacyProfilePage() {
             Gestionar Perfil de Farmacia
           </CardTitle>
           <CardDescription>
-            Actualiza los datos de contacto y horarios fijos de tu farmacia.
+            Actualiza los datos de contacto y horarios fijos de tu farmacia. El email asociado es {user.email}.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -170,11 +183,11 @@ export default function PharmacyProfilePage() {
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label htmlFor="province">Provincia</Label>
-                <Input id="province" name="province" value={profile.province} onChange={handleChange} placeholder="Ej: Buenos Aires"/>
+                <Input id="province" name="province" value={profile.province} onChange={handleChange} placeholder="Ej: Buenos Aires" required/>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="municipality">Localidad/Municipio</Label>
-                <Input id="municipality" name="municipality" value={profile.municipality} onChange={handleChange} placeholder="Ej: La Plata"/>
+                <Input id="municipality" name="municipality" value={profile.municipality} onChange={handleChange} placeholder="Ej: La Plata" required/>
               </div>
             </div>
             
@@ -187,9 +200,9 @@ export default function PharmacyProfilePage() {
                   <Input
                     id={`fixedHours.${day}`}
                     name={`fixedHours.${day}`}
-                    value={(profile.fixedHours as any)[day] || ''}
+                    value={profile.fixedHours[day] || ''}
                     onChange={handleChange}
-                    placeholder="Ej: 09:00-20:00"
+                    placeholder="Ej: 09:00-20:00 o 24hs"
                     className="col-span-2"
                   />
                 </div>
