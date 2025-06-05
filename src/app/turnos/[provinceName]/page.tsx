@@ -6,11 +6,12 @@ import type { Pharmacy } from '@/types';
 import PharmacyCard from '@/components/PharmacyCard';
 import SearchAndFilters from '@/components/SearchAndFilters';
 import { AppContext } from '@/app/AppStateWrapper';
-import { Frown } from 'lucide-react';
-import { useParams } from 'next/navigation';
+import { Frown, Loader2 } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation'; // Added useRouter
 
 export default function ProvincePharmaciesPage() {
   const params = useParams();
+  const router = useRouter(); // For potential redirect
   const context = useContext(AppContext);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,43 +23,42 @@ export default function ProvincePharmaciesPage() {
     return typeof name === 'string' ? decodeURIComponent(name) : '';
   }, [params.provinceName]);
 
-  // Ensure context is loaded before proceeding
   if (!context) {
-    return <div>Cargando estado de la aplicación...</div>;
+     return <div className="text-center py-10"><Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />Cargando contexto...</div>;
   }
-  const { setSelectedProvince, getMunicipalities, allPharmacies, provinces } = context;
+  const { setSelectedProvince, getMunicipalities, allPharmacies, provinces, isLoadingPharmacies } = context;
 
-  // Effect to update selectedProvince in context based on URL parameter
   useEffect(() => {
+    if (isLoadingPharmacies) return; // Wait for provinces to be loaded
+
     if (provinceNameFromUrl && setSelectedProvince) {
-      // Check if provinceNameFromUrl is a valid province
-      if (provinces.includes(provinceNameFromUrl)) {
+      if (provinces.length > 0 && !provinces.includes(provinceNameFromUrl)) {
+        // console.warn("Invalid province in URL:", provinceNameFromUrl, "Available:", provinces);
+        // Consider redirecting to a 404 page or the homepage
+        // router.push('/'); // Example redirect
+        setSelectedProvince(''); // Clear selected province if invalid
+      } else if (provinces.includes(provinceNameFromUrl)) {
         setSelectedProvince(provinceNameFromUrl);
-      } else {
-        // Handle invalid province in URL, e.g., redirect or show error
-        // For now, clearing selected province might be one option, or redirect to 404
-        // console.warn("Invalid province in URL:", provinceNameFromUrl);
-        // router.push('/404') or setSelectedProvince('') to show no results
       }
     }
-  }, [provinceNameFromUrl, setSelectedProvince, provinces]);
+  }, [provinceNameFromUrl, setSelectedProvince, provinces, isLoadingPharmacies, router]);
 
   const municipalities = useMemo(() => {
+    if (isLoadingPharmacies || !provinceNameFromUrl || !provinces.includes(provinceNameFromUrl)) return [];
     return getMunicipalities(provinceNameFromUrl);
-  }, [provinceNameFromUrl, getMunicipalities]);
+  }, [provinceNameFromUrl, getMunicipalities, provinces, isLoadingPharmacies]);
 
   useEffect(() => {
-    // Reset municipality if province changes (e.g. user types different URL) 
-    // and current municipality is not in the new list
-    if (provinceNameFromUrl && municipalities.length > 0 && !municipalities.includes(selectedMunicipality)) {
+    if (isLoadingPharmacies) return;
+    if (provinceNameFromUrl && municipalities.length > 0 && selectedMunicipality && !municipalities.includes(selectedMunicipality)) {
       setSelectedMunicipality('');
     }
-  }, [provinceNameFromUrl, municipalities, selectedMunicipality]);
+  }, [provinceNameFromUrl, municipalities, selectedMunicipality, isLoadingPharmacies]);
 
 
   useEffect(() => {
-    if (!provinceNameFromUrl || !provinces.includes(provinceNameFromUrl)) {
-      setFilteredPharmacies([]); // If province is invalid or not yet loaded from URL, show no pharmacies
+    if (isLoadingPharmacies || !provinceNameFromUrl || (provinces.length > 0 && !provinces.includes(provinceNameFromUrl))) {
+      setFilteredPharmacies([]);
       return;
     }
 
@@ -73,11 +73,12 @@ export default function ProvincePharmaciesPage() {
       result = result.filter(p =>
         p.name.toLowerCase().includes(lowerSearchTerm) ||
         p.address.toLowerCase().includes(lowerSearchTerm) ||
-        p.municipality.toLowerCase().includes(lowerSearchTerm) 
+        (p.municipality && p.municipality.toLowerCase().includes(lowerSearchTerm))
+        // No need to search province name here as it's already filtered by URL
       );
     }
     setFilteredPharmacies(result);
-  }, [searchTerm, provinceNameFromUrl, selectedMunicipality, allPharmacies, provinces]);
+  }, [searchTerm, provinceNameFromUrl, selectedMunicipality, allPharmacies, provinces, isLoadingPharmacies]);
 
   const handleSearchTermChange = (term: string) => {
     setSearchTerm(term);
@@ -87,15 +88,37 @@ export default function ProvincePharmaciesPage() {
     setSelectedMunicipality(municipality);
   };
 
-  if (!provinceNameFromUrl || !provinces.includes(provinceNameFromUrl)) {
-     // Optional: Add a more specific message or a redirect for invalid provinces
-     // For now, relies on the empty filteredPharmacies to show "No hay farmacias"
+  if (isLoadingPharmacies) {
+    return (
+      <div className="text-center py-12">
+        <Loader2 className="h-16 w-16 text-primary animate-spin mx-auto mb-4" />
+        <h2 className="text-2xl font-headline font-semibold mb-2">Cargando Farmacias en {provinceNameFromUrl || ''}...</h2>
+        <p className="text-muted-foreground">
+          Estamos obteniendo la información más reciente.
+        </p>
+      </div>
+    );
   }
+  
+  // After loading, if province is still invalid (e.g., not in fetched list)
+  if (!isLoadingPharmacies && provinceNameFromUrl && provinces.length > 0 && !provinces.includes(provinceNameFromUrl)) {
+    return (
+        <div className="text-center py-12">
+          <Frown className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+          <h2 className="text-2xl font-headline font-semibold mb-2">Provincia no encontrada</h2>
+          <p className="text-muted-foreground">
+            La provincia "{provinceNameFromUrl}" no es válida o no tiene farmacias registradas.
+          </p>
+          <Button onClick={() => router.push('/')} className="mt-4">Volver al inicio</Button>
+        </div>
+      );
+  }
+
 
   return (
     <div>
       <h2 className="text-3xl font-headline font-bold mb-6 text-center">
-        Farmacias de Turno en {provinceNameFromUrl || 'Provincia Desconocida'}
+        Farmacias de Turno en {provinceNameFromUrl || 'Provincia'}
       </h2>
       <SearchAndFilters
         searchTerm={searchTerm}
@@ -103,7 +126,7 @@ export default function ProvincePharmaciesPage() {
         municipalities={municipalities}
         selectedMunicipality={selectedMunicipality}
         onMunicipalityChange={handleMunicipalityChange}
-        selectedProvince={provinceNameFromUrl} // Pass the province from URL
+        selectedProvince={provinceNameFromUrl}
       />
 
       {filteredPharmacies.length > 0 ? (
@@ -117,14 +140,10 @@ export default function ProvincePharmaciesPage() {
           <Frown className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
           <h2 className="text-2xl font-headline font-semibold mb-2">No hay farmacias para mostrar en {provinceNameFromUrl || 'esta provincia'}</h2>
           <p className="text-muted-foreground">
-            Prueba ajustando los filtros o verificando la selección de provincia.
+            Prueba ajustando los filtros o es posible que no haya farmacias cargadas para esta selección.
           </p>
-          { !provinces.includes(provinceNameFromUrl) && provinceNameFromUrl && (
-            <p className="text-red-500 mt-2">La provincia "{provinceNameFromUrl}" no es válida o no tiene farmacias registradas.</p>
-          )}
         </div>
       )}
     </div>
   );
 }
-
