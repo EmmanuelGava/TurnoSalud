@@ -14,7 +14,17 @@ interface HeaderProps {
   onProvinceChange: (province: string) => void;
 }
 
+const ALL_PROVINCES_SELECT_ITEM_VALUE = "__ALL_PROVINCES__"; // Unique non-empty value
+
 export default function Header({ provinces, selectedProvince, onProvinceChange }: HeaderProps) {
+  const handleValueChange = (value: string) => {
+    if (value === ALL_PROVINCES_SELECT_ITEM_VALUE) {
+      onProvinceChange(""); // Translate back to empty string for app state
+    } else {
+      onProvinceChange(value);
+    }
+  };
+
   return (
     <header className="bg-card shadow-md sticky top-0 z-50">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
@@ -23,12 +33,15 @@ export default function Header({ provinces, selectedProvince, onProvinceChange }
           <h1 className="text-2xl font-headline font-bold">TurnoSalud</h1>
         </Link>
         <div className="w-full max-w-xs">
-          <Select value={selectedProvince} onValueChange={onProvinceChange}>
+          {/* The Select's value prop correctly uses selectedProvince (which can be "") */}
+          {/* This allows the placeholder to be shown when selectedProvince is "" */}
+          <Select value={selectedProvince} onValueChange={handleValueChange}>
             <SelectTrigger className="w-full bg-background">
               <SelectValue placeholder="Seleccionar Provincia" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todas las Provincias</SelectItem>
+              {/* This SelectItem now has a non-empty value */}
+              <SelectItem value={ALL_PROVINCES_SELECT_ITEM_VALUE}>Todas las Provincias</SelectItem>
               {provinces.map((province) => (
                 <SelectItem key={province} value={province}>
                   {province}

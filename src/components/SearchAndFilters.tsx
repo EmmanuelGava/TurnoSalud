@@ -19,6 +19,8 @@ interface SearchAndFiltersProps {
   selectedProvince: string; // To enable/disable municipality select
 }
 
+const ALL_MUNICIPALITIES_SELECT_ITEM_VALUE = "__ALL_MUNICIPALITIES__"; // Unique non-empty value
+
 export default function SearchAndFilters({
   searchTerm,
   onSearchTermChange,
@@ -27,6 +29,14 @@ export default function SearchAndFilters({
   onMunicipalityChange,
   selectedProvince,
 }: SearchAndFiltersProps) {
+  const handleMunicipalityValueChange = (value: string) => {
+    if (value === ALL_MUNICIPALITIES_SELECT_ITEM_VALUE) {
+      onMunicipalityChange(""); // Translate back to empty string for app state
+    } else {
+      onMunicipalityChange(value);
+    }
+  };
+
   return (
     <div className="bg-card p-6 rounded-lg shadow-md mb-8">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
@@ -50,16 +60,19 @@ export default function SearchAndFilters({
           <label htmlFor="select-municipality" className="block text-sm font-medium text-foreground mb-1">
             Filtrar por Municipio
           </label>
+          {/* The Select's value prop correctly uses selectedMunicipality (which can be "") */}
+          {/* This allows the placeholder to be shown when selectedMunicipality is "" */}
           <Select
             value={selectedMunicipality}
-            onValueChange={onMunicipalityChange}
+            onValueChange={handleMunicipalityValueChange}
             disabled={!selectedProvince || municipalities.length === 0}
           >
             <SelectTrigger id="select-municipality" className="w-full">
               <SelectValue placeholder="Seleccionar Municipio" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos los Municipios</SelectItem>
+              {/* This SelectItem now has a non-empty value */}
+              <SelectItem value={ALL_MUNICIPALITIES_SELECT_ITEM_VALUE}>Todos los Municipios</SelectItem>
               {municipalities.map((municipality) => (
                 <SelectItem key={municipality} value={municipality}>
                   {municipality}
