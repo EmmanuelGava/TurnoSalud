@@ -5,8 +5,9 @@ import type { Pharmacy, DutyShiftData, FixedHours } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Phone, MapPin, Clock, CheckCircle2, XCircle, CalendarDays } from 'lucide-react';
+import { Phone, MapPin, Clock, CheckCircle2, XCircle, ExternalLink } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 interface PharmacyCardProps {
   pharmacy: Pharmacy;
@@ -30,18 +31,16 @@ const getDayName = (date: Date): keyof FixedHours => {
 export default function PharmacyCard({ pharmacy }: PharmacyCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [displayHours, setDisplayHours] = useState<string>(pharmacy.dutyHours || 'Consultar horario');
-  // const [currentTimeDisplay, setCurrentTimeDisplay] = useState(''); // Optional: for debugging
 
   useEffect(() => {
     const checkOpenStatus = () => {
       const now = new Date();
-      // setCurrentTimeDisplay(now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })); // For debugging
       const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
       const currentDateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
       const currentDayName = getDayName(now);
 
       let pharmacyIsOpen = false;
-      let calculatedDisplayHours = pharmacy.dutyHours || 'Consultar horario';
+      let calculatedDisplayHours = 'Consultar horario'; // Default
 
       // 1. Check Special Duty Shifts
       if (pharmacy.dutyShifts && pharmacy.dutyShifts.length > 0) {
@@ -55,13 +54,11 @@ export default function PharmacyCard({ pharmacy }: PharmacyCardProps) {
             let endTime = timeToMinutes(todayShift.endTime);
 
             if (!isNaN(startTime) && !isNaN(endTime)) {
-              if (endTime <= startTime) { // Handles overnight shifts (e.g., 20:00 - 08:00 next day)
-                 // This logic means if start is 08:00 and end is 08:00, it's a 24h cycle unless is24hs=true
-                if (startTime === endTime) { // Assumed 24h if start and end are same and not is24hs explicitly
-                    pharmacyIsOpen = true;
-                } else if (currentTimeInMinutes >= startTime || currentTimeInMinutes < endTime) {
-                    pharmacyIsOpen = true;
-                }
+              if (endTime <= startTime) { // Handles overnight shifts or 24h denoted by same start/end
+                 // If start and end are same, it's effectively 24h for that day part
+                if (startTime === endTime) pharmacyIsOpen = true;
+                // If current time is past start OR before end (next day part)
+                else if (currentTimeInMinutes >= startTime || currentTimeInMinutes < endTime) pharmacyIsOpen = true;
               } else { // Normal same-day shift
                 if (currentTimeInMinutes >= startTime && currentTimeInMinutes < endTime) {
                   pharmacyIsOpen = true;
@@ -74,7 +71,7 @@ export default function PharmacyCard({ pharmacy }: PharmacyCardProps) {
           }
           setIsOpen(pharmacyIsOpen);
           setDisplayHours(calculatedDisplayHours);
-          return; // Special shift found and processed, no need to check fixed hours
+          return; // Special shift found and processed
         }
       }
 
@@ -93,17 +90,18 @@ export default function PharmacyCard({ pharmacy }: PharmacyCardProps) {
               let endTime = timeToMinutes(timeParts[1]);
 
               if (!isNaN(startTime) && !isNaN(endTime)) {
-                 if (endTime <= startTime) { // Handles overnight for fixed hours
-                    if (startTime === endTime) pharmacyIsOpen = true; // 08:00-08:00 means 24h
+                 if (endTime <= startTime) { 
+                    if (startTime === endTime) pharmacyIsOpen = true; 
                     else if (currentTimeInMinutes >= startTime || currentTimeInMinutes < endTime) pharmacyIsOpen = true;
-                } else { // Normal same-day fixed hours
+                } else { 
                   if (currentTimeInMinutes >= startTime && currentTimeInMinutes < endTime) {
                     pharmacyIsOpen = true;
                   }
                 }
                 if (pharmacyIsOpen) {
-                  calculatedDisplayHours = `${timeParts[0]} - ${timeParts[1]} (Horario fijo)`;
-                  break; // Found an open slot
+                  // Show the full day's fixed schedule string if open by fixed hours
+                  calculatedDisplayHours = `${fixedHoursTodayString} (Horario fijo)`;
+                  break; 
                 }
               }
             }
@@ -112,27 +110,31 @@ export default function PharmacyCard({ pharmacy }: PharmacyCardProps) {
       }
       
       setIsOpen(pharmacyIsOpen);
-      // If no specific hours made it open, displayHours remains pharmacy.dutyHours or "Consultar horario"
-      // If it IS open due to fixed hours, calculatedDisplayHours would have been updated.
-      if (pharmacyIsOpen && (calculatedDisplayHours === (pharmacy.dutyHours || 'Consultar horario'))) {
-        // This case should be covered by the specific logic above, but as a fallback.
+      // Update displayHours based on whether it's open and what schedule applies
+      if (pharmacyIsOpen) {
+          setDisplayHours(calculatedDisplayHours);
       } else {
-         setDisplayHours(calculatedDisplayHours);
+          // If closed, show today's fixed hours if available, otherwise the default
+          const fixedToday = pharmacy.fixedHours?.[currentDayName];
+          setDisplayHours(fixedToday || 'Consultar horario');
       }
-
     };
 
     checkOpenStatus();
-    const intervalId = setInterval(checkOpenStatus, 60000); // Re-check every minute
+    const intervalId = setInterval(checkOpenStatus, 60000);
     return () => clearInterval(intervalId);
 
   }, [pharmacy]);
 
   return (
     <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col h-full">
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex justify-between items-start mb-1">
-          <CardTitle className="font-headline text-xl">{pharmacy.name}</CardTitle>
+          <CardTitle className="font-headline text-xl hover:text-primary transition-colors">
+            <Link href={`/farmacia/${pharmacy.id}`}>
+              {pharmacy.name}
+            </Link>
+          </CardTitle>
           {isOpen ? (
             <Badge variant="default" className="bg-green-500 hover:bg-green-600 text-white whitespace-nowrap">
               <CheckCircle2 className="mr-1 h-4 w-4" /> Abierta Ahora
@@ -150,30 +152,34 @@ export default function PharmacyCard({ pharmacy }: PharmacyCardProps) {
            {pharmacy.municipality}, {pharmacy.province}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3 flex-grow flex flex-col justify-between">
+      <CardContent className="space-y-3 flex-grow flex flex-col justify-between pt-0">
         <div>
-          <div className="flex items-center">
+          <div className="flex items-center text-sm">
             <Clock className="h-4 w-4 mr-2 text-primary shrink-0" />
-            <span className="text-sm">Horario de Referencia: {displayHours}</span>
+            <span>{displayHours}</span>
           </div>
           {pharmacy.phone && (
-            <div className="flex items-center mt-2">
+            <div className="flex items-center mt-1 text-sm">
               <Phone className="h-4 w-4 mr-2 text-primary shrink-0" />
-              <span className="text-sm">{pharmacy.phone}</span>
+              <span>{pharmacy.phone}</span>
             </div>
           )}
         </div>
         
-        {pharmacy.phone && (
-          <Button asChild variant="outline" className="w-full mt-4 border-primary text-primary hover:bg-primary/10">
-            <a href={`tel:${pharmacy.phone}`}>
-              <Phone className="mr-2 h-4 w-4" /> Llamar
-            </a>
-          </Button>
-        )}
-        {/* Optional: For debugging time
-         {currentTimeDisplay && <p className="text-xs text-muted-foreground text-center mt-1">Hora actual: {currentTimeDisplay}</p>}
-        */}
+        <div className="flex flex-col sm:flex-row gap-2 mt-3">
+            {pharmacy.phone && (
+              <Button asChild variant="outline" className="w-full border-primary text-primary hover:bg-primary/10">
+                <a href={`tel:${pharmacy.phone}`}>
+                  <Phone className="mr-2 h-4 w-4" /> Llamar
+                </a>
+              </Button>
+            )}
+            <Button asChild variant="default" className="w-full">
+              <Link href={`/farmacia/${pharmacy.id}`}>
+                <ExternalLink className="mr-2 h-4 w-4" /> Ver Detalles
+              </Link>
+            </Button>
+        </div>
       </CardContent>
     </Card>
   );
