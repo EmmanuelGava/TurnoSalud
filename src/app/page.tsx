@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useContext } from 'react';
@@ -5,47 +6,46 @@ import type { Pharmacy } from '@/types';
 import PharmacyCard from '@/components/PharmacyCard';
 import SearchAndFilters from '@/components/SearchAndFilters';
 import { AppContext } from './AppStateWrapper';
-import { SmileदुखीFace } from 'lucide-react'; // Smileysad is not a valid Lucide icon, using a placeholder or different icon. Corrected to Smile. If Smile is not valid, then Frown or similar. Checking... Lucide has Frown, Laugh, Meh, Smile. Using Smile.
-// Actually using Info icon as Smile could be misconstrued.
-
-// Placeholder for SadFace or relevant icon if Smile/Info is not appropriate.
-// After checking, lucide-react has 'Frown'. Let's use Frown for "no results".
-import { Frown, Info } from 'lucide-react';
-
+import { Frown } from 'lucide-react';
 
 export default function HomePage() {
   const context = useContext(AppContext);
-
-  if (!context) {
-    // This should ideally not happen if AppStateWrapper is correctly set up in layout
-    return <div>Loading application state...</div>;
-  }
-
-  const { selectedProvince, getMunicipalities, allPharmacies } = context;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState('');
   const [filteredPharmacies, setFilteredPharmacies] = useState<Pharmacy[]>([]);
   
-  const municipalities = useMemo(() => {
-    return getMunicipalities(selectedProvince);
-  }, [selectedProvince, getMunicipalities]);
+  // Ensure context is loaded before proceeding
+  if (!context) {
+    return <div>Cargando estado de la aplicación...</div>;
+  }
+  const { selectedProvince, setSelectedProvince, getMunicipalities, allPharmacies } = context;
 
+  // Effect to clear selectedProvince when navigating to the homepage
   useEffect(() => {
-    // Reset municipality if province changes and current municipality is not in the new list
-    if (selectedProvince && municipalities.length > 0 && !municipalities.includes(selectedMunicipality)) {
-      setSelectedMunicipality('');
+    if (setSelectedProvince && selectedProvince !== '') {
+      setSelectedProvince('');
     }
-  }, [selectedProvince, municipalities, selectedMunicipality]);
+    // Always reset municipality when on home page as province context is now ""
+    setSelectedMunicipality(''); 
+  }, [setSelectedProvince]); // Only re-run if setSelectedProvince changes (on mount)
+
+  const municipalities = useMemo(() => {
+    // On homepage, selectedProvince from context should be '', so municipalities list will be empty
+    // and SearchAndFilters will disable municipality selection, which is correct.
+    return getMunicipalities(selectedProvince); 
+  }, [selectedProvince, getMunicipalities]);
 
   useEffect(() => {
     let result = allPharmacies;
 
-    if (selectedProvince) {
-      result = result.filter(p => p.province === selectedProvince);
-    }
+    // Homepage shows all provinces, so no province filter here.
+    // selectedProvince from context should be '' here.
 
     if (selectedMunicipality) {
+      // This filter will only apply if a municipality was somehow selected,
+      // but typically municipality dropdown is disabled if no province is selected.
+      // Keeping it for edge cases or future enhancements.
       result = result.filter(p => p.municipality === selectedMunicipality);
     }
 
@@ -58,7 +58,7 @@ export default function HomePage() {
       );
     }
     setFilteredPharmacies(result);
-  }, [searchTerm, selectedProvince, selectedMunicipality, allPharmacies]);
+  }, [searchTerm, selectedMunicipality, allPharmacies]);
 
   const handleSearchTermChange = (term: string) => {
     setSearchTerm(term);
@@ -73,10 +73,10 @@ export default function HomePage() {
       <SearchAndFilters
         searchTerm={searchTerm}
         onSearchTermChange={handleSearchTermChange}
-        municipalities={municipalities}
+        municipalities={municipalities} // Will be empty if selectedProvince is ''
         selectedMunicipality={selectedMunicipality}
         onMunicipalityChange={handleMunicipalityChange}
-        selectedProvince={selectedProvince}
+        selectedProvince={selectedProvince} // Pass current selectedProvince (should be '' here)
       />
 
       {filteredPharmacies.length > 0 ? (
@@ -93,7 +93,7 @@ export default function HomePage() {
             Prueba ajustando los filtros o ampliando tu término de búsqueda.
           </p>
           <p className="text-sm text-muted-foreground mt-2">
-            También puedes seleccionar "Todas las Provincias" y "Todos los Municipios" para ver más resultados.
+            Selecciona una provincia desde el menú superior para ver farmacias específicas.
           </p>
         </div>
       )}

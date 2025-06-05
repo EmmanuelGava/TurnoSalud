@@ -1,3 +1,4 @@
+
 import { Hospital } from 'lucide-react';
 import {
   Select,
@@ -8,6 +9,7 @@ import {
 } from '@/components/ui/select';
 import Link from 'next/link';
 import { ThemeToggle } from './ThemeToggle';
+import { useRouter } from 'next/navigation'; // Import useRouter
 
 interface HeaderProps {
   provinces: string[];
@@ -18,11 +20,15 @@ interface HeaderProps {
 const ALL_PROVINCES_SELECT_ITEM_VALUE = "__ALL_PROVINCES__"; 
 
 export default function Header({ provinces, selectedProvince, onProvinceChange }: HeaderProps) {
+  const router = useRouter(); // Initialize useRouter
+
   const handleValueChange = (value: string) => {
     if (value === ALL_PROVINCES_SELECT_ITEM_VALUE) {
       onProvinceChange(""); 
+      router.push('/'); // Navigate to home page for "All Provinces"
     } else {
       onProvinceChange(value);
+      router.push(`/turnos/${encodeURIComponent(value)}`); // Navigate to province-specific page
     }
   };
 
